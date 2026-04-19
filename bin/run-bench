@@ -25,9 +25,15 @@ php benchmark/latency.php 100000
 
 echo
 echo "============================================================"
-echo "4/4 adapter-comparison (APCu vs File vs Redis, 50k each)"
+echo "4/5 adapter-comparison (APCu vs File vs Redis, 50k each)"
 echo "============================================================"
 php benchmark/adapter-comparison.php 50000
+
+echo
+echo "============================================================"
+echo "5/5 worker-id-acquire (boot-time cost per allocator, 1k iterations)"
+echo "============================================================"
+php benchmark/worker-id-acquire.php 1000
 
 echo
 echo "All benchmarks completed."
