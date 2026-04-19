@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Konayuki\Laravel;
 
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 use Konayuki\Apcu\ApcuAtomicCounter;
@@ -11,6 +12,9 @@ use Konayuki\AtomicCounter;
 use Konayuki\Clock;
 use Konayuki\FileLock\FileLockWorkerIdAllocator;
 use Konayuki\Fixed\FixedWorkerIdAllocator;
+use Konayuki\Hint\HostnameHashWorkerIdAllocator;
+use Konayuki\Hint\IpHashWorkerIdAllocator;
+use Konayuki\Hint\IpLastOctetWorkerIdAllocator;
 use Konayuki\IdGenerator;
 use Konayuki\JitteredTimestamp;
 use Konayuki\Layout;
@@ -26,7 +30,7 @@ final class KonayukiServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../../config/konayuki.php', 'konayuki');
 
         $this->app->singleton(Layout::class, static function (Application $app): Layout {
-            $cfg = (array) $app['config']->get('konayuki');
+            $cfg = (array) $app->make(ConfigRepository::class)->get('konayuki');
 
             return new Layout(
                 epochMs: (int) $cfg['epoch_ms'],
@@ -40,7 +44,7 @@ final class KonayukiServiceProvider extends ServiceProvider
         $this->app->singleton(AtomicCounter::class, static fn (): AtomicCounter => new ApcuAtomicCounter);
 
         $this->app->singleton(TimestampStrategy::class, static function (Application $app): TimestampStrategy {
-            $cfg = (array) $app['config']->get('konayuki.timestamp');
+            $cfg = (array) $app->make(ConfigRepository::class)->get('konayuki.timestamp');
 
             return match ($cfg['mode']) {
                 'jittered' => new JitteredTimestamp((int) $cfg['jitter_ms']),
@@ -49,13 +53,19 @@ final class KonayukiServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(WorkerIdAllocator::class, static function (Application $app): WorkerIdAllocator {
-            $cfg = (array) $app['config']->get('konayuki.worker_id');
+            $cfg = (array) $app->make(ConfigRepository::class)->get('konayuki.worker_id');
+            $maxWorkers = (int) $cfg['max_workers'];
+            $ipOverride = is_string($cfg['ip_override'] ?? null) ? $cfg['ip_override'] : null;
+            $hostnameOverride = is_string($cfg['hostname_override'] ?? null) ? $cfg['hostname_override'] : null;
 
             return match ($cfg['mode']) {
                 'fixed' => new FixedWorkerIdAllocator((int) $cfg['fixed_value']),
+                'ip-last-octet' => new IpLastOctetWorkerIdAllocator($ipOverride, $maxWorkers),
+                'ip-hash' => new IpHashWorkerIdAllocator($ipOverride, $maxWorkers),
+                'hostname-hash' => new HostnameHashWorkerIdAllocator($hostnameOverride, $maxWorkers),
                 default => new FileLockWorkerIdAllocator(
-                    lockDirectory: $cfg['lock_dir'] ?? storage_path('konayuki'),
-                    maxWorkers: (int) $cfg['max_workers'],
+                    lockDirectory: is_string($cfg['lock_dir'] ?? null) ? $cfg['lock_dir'] : storage_path('konayuki'),
+                    maxWorkers: $maxWorkers,
                 ),
             };
         });
