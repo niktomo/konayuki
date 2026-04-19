@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# run-all — full QA + benchmark pipeline for konayuki.
+# Run inside the Docker `app` service: docker compose run --rm app
+#
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "==> composer install"
+composer install --prefer-dist --no-progress --no-interaction
+
+echo "==> vendor/bin/pint --test"
+vendor/bin/pint --test
+
+echo "==> vendor/bin/phpstan analyse --memory-limit=512M"
+vendor/bin/phpstan analyse --memory-limit=512M
+
+echo "==> vendor/bin/phpunit"
+vendor/bin/phpunit
+
+echo "==> bin/konayuki-doctor"
+bin/konayuki-doctor || true   # warnings (exit 1) are tolerated for the report
+
+echo "==> bin/run-bench"
+bin/run-bench
+
+echo
+echo "All checks completed."

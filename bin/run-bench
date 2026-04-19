@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# run-bench — execute all benchmark scripts in order.
+#
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "============================================================"
+echo "1/4 collision-stress (8 procs × 10k IDs, fork-based)"
+echo "============================================================"
+php benchmark/collision-stress.php 8 10000
+
+echo
+echo "============================================================"
+echo "2/4 throughput (single-process, 1M IDs)"
+echo "============================================================"
+php benchmark/throughput.php 1000000
+
+echo
+echo "============================================================"
+echo "3/4 latency (p50 / p95 / p99 over 100k samples)"
+echo "============================================================"
+php benchmark/latency.php 100000
+
+echo
+echo "============================================================"
+echo "4/4 adapter-comparison (APCu vs File vs Redis, 50k each)"
+echo "============================================================"
+php benchmark/adapter-comparison.php 50000
+
+echo
+echo "All benchmarks completed."

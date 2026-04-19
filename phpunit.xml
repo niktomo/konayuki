@@ -13,7 +13,9 @@
       <directory>src</directory>
     </include>
   </source>
-  <php>
-    <ini name="apc.enable_cli" value="1"/>
-  </php>
+  <!--
+    Note: apc.enable_cli must be set in php.ini (PHP_INI_SYSTEM scope) — it
+    cannot be overridden at runtime via phpunit.xml. The Dockerfile and
+    konayuki-doctor both verify this requirement.
+  -->
 </phpunit>

@@ -1,0 +1,64 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.4}
+    image: konayuki-dev:${PHP_VERSION:-8.4}
+    volumes:
+      - .:/app
+    working_dir: /app
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      KONAYUKI_REDIS_HOST: redis
+      KONAYUKI_REDIS_PORT: 6379
+    command: bin/run-all
+
+  test:
+    build:
+      context: .
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.4}
+    image: konayuki-dev:${PHP_VERSION:-8.4}
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: vendor/bin/phpunit
+
+  stan:
+    build:
+      context: .
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.4}
+    image: konayuki-dev:${PHP_VERSION:-8.4}
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: vendor/bin/phpstan analyse --memory-limit=512M
+
+  bench:
+    build:
+      context: .
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.4}
+    image: konayuki-dev:${PHP_VERSION:-8.4}
+    volumes:
+      - .:/app
+    working_dir: /app
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      KONAYUKI_REDIS_HOST: redis
+      KONAYUKI_REDIS_PORT: 6379
+    command: bin/run-bench
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 1s
+      retries: 10
