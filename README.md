@@ -114,14 +114,14 @@ Full env reference is in [`config/konayuki.php`](config/konayuki.php).
 
 ## Concurrency Model (what makes `next()` multi-process safe)
 
-Konayuki uses **two different "locks"** that solve **two different problems**. They are easy to confuse — this section exists to make the distinction explicit.
+Konayuki has **only one PHP-userland lock** — the boot-time `flock` for `worker_id`. The per-call sequence increment uses a single atomic CPU instruction in the C extension, with **no PHP-side mutex, no `flock`, no semaphore**. The two mechanisms below are easy to confuse, so the distinction is spelled out explicitly:
 
 | | ① WorkerId flock | ② Sequence atomic inc |
 |---|---|---|
 | **When it runs** | Once per process, at boot | **Every call to `next()`** |
 | **What it protects** | Each process gets a *unique `worker_id` slot* | The per-(worker_id, ms) sequence stays monotonic across concurrent calls |
 | **Implementation** | `flock(LOCK_EX \| LOCK_NB)` on a lock file (kernel-released on process exit) | `apcu_inc()` (atomic at the C-extension level — no PHP-side lock) |
-| **Where to find it** | `FileLockWorkerIdAllocator::acquire()` | `ApcuAtomicCounter::increment()` |
+| **Where to find it** | `FileLockWorkerIdAllocator::acquire()` | `ApcuAtomicCounter::nextSequence()` |
 | **Cost** | ~1.5 µs once | ~400 ns per call |
 
 ### Why both are needed
@@ -145,9 +145,9 @@ Konayuki uses **two different "locks"** that solve **two different problems**. T
 | **WorkerId flock only** | Two processes both think they're `worker_id=0`, so they share APCu key `seq:0:MS`. Atomic inc still serializes them, but the resulting Snowflake IDs `(worker_id=0, ms, seq)` collide because the IDs are identical to processes on *other* hosts running the same code. |
 | **Sequence atomic inc only** | Even within one process, two concurrent `next()` calls could read the counter, both see `5`, both write `6` → duplicate sequence within the same ms. |
 
-> **TL;DR:** flock is for "who am I" (boot-time identity). `apcu_inc` is for "what's the next number" (runtime atomicity). Both are required; neither replaces the other.
+> **TL;DR:** flock is for "who am I" (boot-time identity, runs once). `apcu_inc` is for "what's the next number" (runtime atomicity, runs every call). Both are required; neither replaces the other.
 
-`apcu_inc()` is **fully multi-process safe** — it's implemented as an atomic operation in the APCu C extension (backed by a pthread mutex or spinlock depending on build). The "lock" is **invisible from PHP userland** and adds no syscall on the fast path.
+`apcu_inc()` is **fully multi-process safe** — implemented as an atomic operation in the APCu C extension (backed by a pthread mutex or spinlock depending on build). The "lock" is **invisible from PHP userland** and adds no syscall on the fast path. From an application code perspective, `AtomicCounter::nextSequence()` looks like an ordinary function call.
 
 ---
 
@@ -379,16 +379,21 @@ KONAYUKI_EPOCH_MS=1767225600000   # 2026-01-01 UTC (default)
 
 ---
 
-## Timestamp Strategy
+## Sequence Strategy
+
+The 12-bit sequence portion of each ID can start at either `0` (default) or a random value per ms window. The choice has zero impact on uniqueness — the `(workerId, ms, sequence)` tuple stays unique either way — and the trade-off only affects **intra-millisecond** ordering.
 
 ```dotenv
-KONAYUKI_TIMESTAMP_MODE=real        # production (default)
-# KONAYUKI_TIMESTAMP_MODE=jittered  # local dev only — breaks k-sortable!
-# KONAYUKI_JITTER_MS=100            # ± random offset
+KONAYUKI_SEQUENCE_MODE=monotonic    # production (default)
+# KONAYUKI_SEQUENCE_MODE=random     # spread IDs across DB shards / hash buckets
 ```
 
-- `real`: wall-clock ms. Use in production.
-- `jittered`: wall-clock ± random(0..jitter_ms). **Local dev only** — designed for sparse-traffic shard distribution. Breaks k-sortable ordering.
+| Mode | Behavior | Use when |
+|---|---|---|
+| `monotonic` | Each ms window starts sequence at `0`. Smallest IDs, fully k-sortable inside ms. | Production. Default. |
+| `random` | Each ms window starts at `random_int(0, maxSequence)`. Inter-ms order preserved by timestamp prefix; intra-ms order is shuffled. | Sparse-traffic dev / staging where you want IDs to spread across DB shards or hash buckets without waiting to fill ms windows naturally. |
+
+> Why no "jittered timestamp" mode anymore? An earlier prototype perturbed the **timestamp** itself to spread shard distribution. That broke k-sortable ordering for *zero* gain — sequence randomization achieves the same shard-distribution goal while keeping ms-level ordering intact. The timestamp strategy is now `real` only.
 
 ---
 

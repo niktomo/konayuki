@@ -23,12 +23,18 @@ final class RedisAtomicCounter implements AtomicCounter
 {
     private const SENTINEL_KEY = '__konayuki_alive__';
 
-    private const INCR_SCRIPT = <<<'LUA'
-        local val = redis.call('INCR', KEYS[1])
-        if val == 1 and tonumber(ARGV[1]) > 0 then
-            redis.call('EXPIRE', KEYS[1], ARGV[1])
+    private const NEXT_SEQUENCE_SCRIPT = <<<'LUA'
+        local key = KEYS[1]
+        local initial = tonumber(ARGV[1])
+        local ttl = tonumber(ARGV[2])
+        if redis.call('EXISTS', key) == 0 then
+            redis.call('SET', key, initial)
+            if ttl > 0 then
+                redis.call('EXPIRE', key, ttl)
+            end
+            return initial
         end
-        return val
+        return redis.call('INCR', key)
         LUA;
 
     public function __construct(
@@ -42,13 +48,12 @@ final class RedisAtomicCounter implements AtomicCounter
         }
     }
 
-    public function increment(string $key, int $ttlSeconds): int
+    public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int
     {
         $fullKey = $this->keyPrefix.$key;
-        /** @phpstan-ignore-next-line — dynamic dispatch on duck-typed client */
-        $result = $this->client->eval(self::INCR_SCRIPT, [$fullKey, (string) $ttlSeconds], 1);
+        $result = $this->callEval(self::NEXT_SEQUENCE_SCRIPT, [$fullKey, (string) $initialValue, (string) $ttlSeconds], 1);
         if (! is_int($result)) {
-            throw new \RuntimeException("Redis INCR failed for key: {$fullKey}");
+            throw new \RuntimeException("Redis nextSequence failed for key: {$fullKey}");
         }
 
         return $result;
@@ -57,9 +62,33 @@ final class RedisAtomicCounter implements AtomicCounter
     public function wasReinitialized(): bool
     {
         $key = $this->keyPrefix.self::SENTINEL_KEY;
-        /** @phpstan-ignore-next-line — dynamic dispatch on duck-typed client */
-        $result = $this->client->set($key, '1', ['NX']);
+        $result = $this->callSet($key, '1', ['NX']);
 
         return $result === true || $result === 'OK';
+    }
+
+    /**
+     * Wraps the duck-typed eval() call so PHPStan does not need to inspect
+     * an unknown object's method signature.
+     *
+     * @param  list<string>  $args
+     */
+    private function callEval(string $script, array $args, int $numKeys): mixed
+    {
+        /** @var callable $eval */
+        $eval = [$this->client, 'eval'];
+
+        return $eval($script, $args, $numKeys);
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $options
+     */
+    private function callSet(string $key, string $value, array $options): mixed
+    {
+        /** @var callable $set */
+        $set = [$this->client, 'set'];
+
+        return $set($key, $value, $options);
     }
 }

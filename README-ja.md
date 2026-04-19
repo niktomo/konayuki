@@ -114,14 +114,14 @@ $id->sequence();               // 0..4095（ms 内）
 
 ## 並行処理モデル — なぜ `next()` が複数プロセスから安全か
 
-Konayuki は **2 種類の "lock"** で **2 種類の異なる問題** を解いている。よく混同されるので、ここで明示的に区別する。
+Konayuki に存在する **PHP userland のロックは 1 種類だけ** — 起動時の `worker_id` 用 `flock` のみ。呼び出しごとの sequence インクリメントは C 拡張内の atomic 命令 1 つで完結し、**PHP 側の mutex / `flock` / semaphore は一切ない**。下記の 2 メカニズムは混同されやすいので明示的に区別する。
 
 | | ① WorkerId flock | ② Sequence atomic inc |
 |---|---|---|
 | **いつ実行されるか** | プロセスごとに起動時 1 回 | **`next()` の呼び出しごと** |
 | **何を守るか** | 各プロセスが *ユニークな `worker_id` スロット* を取る | (worker_id, ms) ごとの sequence が並行呼び出しでも単調に増える |
 | **実装** | ロックファイルへの `flock(LOCK_EX \| LOCK_NB)`（プロセス終了時にカーネルが解放） | `apcu_inc()`（C 拡張レベルで atomic — PHP 側のロックなし） |
-| **コード位置** | `FileLockWorkerIdAllocator::acquire()` | `ApcuAtomicCounter::increment()` |
+| **コード位置** | `FileLockWorkerIdAllocator::acquire()` | `ApcuAtomicCounter::nextSequence()` |
 | **コスト** | ~1.5 µs（1 回のみ） | ~400 ns / call |
 
 ### 両方が必要な理由
@@ -145,9 +145,9 @@ Konayuki は **2 種類の "lock"** で **2 種類の異なる問題** を解い
 | **WorkerId flock のみ削除** | 2 つのプロセスが両方とも `worker_id=0` を名乗る → 同じ APCu キー `seq:0:MS` を共有。atomic inc は serialize するが、**他ホストの同じコードが生成する同 (worker_id=0, ms, seq) と衝突**する。 |
 | **Sequence atomic inc のみ削除** | 1 プロセス内でも 2 つの並行 `next()` がカウンタを読み、両方とも `5` を見て両方とも `6` を書く → 同 ms 内で sequence 重複。 |
 
-> **TL;DR:** flock は「自分は誰か」（起動時の identity）を担当。`apcu_inc` は「次の番号は何か」（実行時の atomicity）を担当。両方が必要。互いを置き換えない。
+> **TL;DR:** flock は「自分は誰か」（起動時の identity、1 回のみ）を担当。`apcu_inc` は「次の番号は何か」（実行時の atomicity、毎回）を担当。両方が必要。互いを置き換えない。
 
-`apcu_inc()` は **完全に複数プロセス安全**。APCu C 拡張内で atomic 操作として実装されている（ビルドにより pthread mutex / spinlock）。「ロック」は **PHP userland から不可視** で、ホットパスに syscall を増やさない。
+`apcu_inc()` は **完全に複数プロセス安全**。APCu C 拡張内で atomic 操作として実装されている（ビルドにより pthread mutex / spinlock）。「ロック」は **PHP userland から不可視** で、ホットパスに syscall を増やさない。アプリケーションコードから見ると `AtomicCounter::nextSequence()` は通常の関数呼び出しに見える。
 
 ---
 
@@ -379,16 +379,21 @@ KONAYUKI_EPOCH_MS=1767225600000   # 2026-01-01 UTC（デフォルト）
 
 ---
 
-## タイムスタンプ戦略
+## シーケンス戦略
+
+各 ID の 12 bit シーケンス部は ms ウィンドウごとに `0` から始める（デフォルト）か、ランダム値から始めるかを選べる。**uniqueness には影響しない**（`(workerId, ms, sequence)` の組は常に一意）。トレードオフは **同一 ms 内** の順序にだけ現れる。
 
 ```dotenv
-KONAYUKI_TIMESTAMP_MODE=real        # 本番（デフォルト）
-# KONAYUKI_TIMESTAMP_MODE=jittered  # ローカル開発のみ — k-sortable 順序が壊れる！
-# KONAYUKI_JITTER_MS=100            # ± ランダムオフセット
+KONAYUKI_SEQUENCE_MODE=monotonic    # 本番（デフォルト）
+# KONAYUKI_SEQUENCE_MODE=random     # DB シャード / ハッシュバケット分散用
 ```
 
-- `real`: wall-clock ms。本番で使う。
-- `jittered`: wall-clock ± random(0..jitter_ms)。**ローカル開発のみ** — トラフィックが少ない時のシャード分散用。k-sortable 順序が壊れる。
+| モード | 動作 | 使うべき場面 |
+|---|---|---|
+| `monotonic` | 各 ms ウィンドウのシーケンスが `0` から開始。ID が最小。ms 内も完全 k-sortable。 | 本番。デフォルト。 |
+| `random` | 各 ms ウィンドウが `random_int(0, maxSequence)` から開始。ms 跨ぎの順序は timestamp prefix で保たれ、ms 内のみシャッフル。 | トラフィックが少ない dev/staging で、ms ウィンドウを自然に埋める前から ID を DB シャードやハッシュバケットに分散したいとき。 |
+
+> なぜ「jittered timestamp」モードは廃止された？ 初期プロトタイプは **timestamp 自体** を撹乱してシャード分散を目指したが、k-sortable 順序を壊して得られるメリットは **ゼロ** だった。シーケンスの乱数化なら ms 内の順序だけを犠牲に同じ分散効果が得られる。timestamp 戦略は `real` のみとなった。
 
 ---
 

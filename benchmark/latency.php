@@ -19,6 +19,7 @@ use Konayuki\Fixed\FixedWorkerIdAllocator;
 use Konayuki\IdGenerator;
 use Konayuki\Layout;
 use Konayuki\RealTimestamp;
+use Konayuki\Sequence\MonotonicSequenceStrategy;
 use Konayuki\SystemClock;
 
 if (! extension_loaded('apcu') || ! ini_get('apc.enable_cli')) {
@@ -28,19 +29,24 @@ if (! extension_loaded('apcu') || ! ini_get('apc.enable_cli')) {
 
 $samples = (int) ($argv[1] ?? 100_000);
 
+// Reset state BEFORE warm-up so the warm-up itself absorbs the wipe-detection cost
+// (otherwise the first measured call sees wasReinitialized=true and waits ~1 ms,
+// inflating max/p999 by 6 orders of magnitude).
+apcu_clear_cache();
+
 $generator = new IdGenerator(
     counter: new ApcuAtomicCounter,
     clock: new SystemClock,
     layout: Layout::default(),
     timestamp: new RealTimestamp,
+    sequence: new MonotonicSequenceStrategy,
     workerId: (new FixedWorkerIdAllocator(1))->acquire(),
 );
 
-// Warm-up
+// Warm-up — JIT, opcode cache, APCu key creation
 for ($i = 0; $i < 5_000; $i++) {
     $generator->next();
 }
-apcu_clear_cache();
 
 /** @var list<int> $latencies (nanoseconds per call) */
 $latencies = [];

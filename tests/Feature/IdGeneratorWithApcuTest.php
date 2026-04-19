@@ -8,6 +8,8 @@ use Konayuki\Apcu\ApcuAtomicCounter;
 use Konayuki\IdGenerator;
 use Konayuki\Layout;
 use Konayuki\RealTimestamp;
+use Konayuki\Sequence\MonotonicSequenceStrategy;
+use Konayuki\Sequence\RandomSequenceStrategy;
 use Konayuki\SystemClock;
 use PHPUnit\Framework\TestCase;
 
@@ -29,6 +31,7 @@ final class IdGeneratorWithApcuTest extends TestCase
             clock: new SystemClock,
             layout: Layout::default(),
             timestamp: new RealTimestamp,
+            sequence: new MonotonicSequenceStrategy,
             workerId: 1,
         );
 
@@ -50,6 +53,7 @@ final class IdGeneratorWithApcuTest extends TestCase
             clock: new SystemClock,
             layout: Layout::default(),
             timestamp: new RealTimestamp,
+            sequence: new MonotonicSequenceStrategy,
             workerId: 2,
         );
 
@@ -61,5 +65,27 @@ final class IdGeneratorWithApcuTest extends TestCase
             self::assertGreaterThan($previous, $current, "ID #{$i} not monotonic");
             $previous = $current;
         }
+    }
+
+    public function test_random_sequence_mode_still_produces_unique_ids(): void
+    {
+        // Given — generator wired with RandomSequenceStrategy (each ms window starts at random initial value)
+        $generator = new IdGenerator(
+            counter: new ApcuAtomicCounter,
+            clock: new SystemClock,
+            layout: Layout::default(),
+            timestamp: new RealTimestamp,
+            sequence: new RandomSequenceStrategy,
+            workerId: 3,
+        );
+
+        // When — emit IDs across multiple ms windows
+        $ids = [];
+        for ($i = 0; $i < 5_000; $i++) {
+            $ids[] = $generator->next()->value;
+        }
+
+        // Then — uniqueness holds even with random initial sequence values
+        self::assertCount(5_000, array_unique($ids), 'No collisions in 5k IDs with random sequence start');
     }
 }

@@ -7,12 +7,17 @@ namespace Konayuki;
 interface AtomicCounter
 {
     /**
-     * Atomically increment the counter at $key by 1 and return the post-increment value.
-     * If the key does not exist, it is created with TTL $ttlSeconds and returns 1.
+     * Atomically obtain the next sequence value at $key.
      *
-     * Implementations must be safe under concurrent access (multiple processes / threads).
+     * - If the key does not exist: initialize it to $initialValue with TTL $ttlSeconds,
+     *   and return $initialValue.
+     * - If the key exists: atomically increment by 1 and return the new value.
+     *
+     * Implementations must be safe under concurrent access (multi-process, multi-thread):
+     * the init-or-increment decision must be atomic, otherwise two callers could both
+     * observe "key does not exist" and both initialize, losing one of the values.
      */
-    public function increment(string $key, int $ttlSeconds): int;
+    public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int;
 
     /**
      * Returns true if the storage has been re-initialized since the last process boot

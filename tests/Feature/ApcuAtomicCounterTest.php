@@ -17,18 +17,32 @@ final class ApcuAtomicCounterTest extends TestCase
         apcu_clear_cache();
     }
 
-    public function test_increment_returns_monotonic_values(): void
+    public function test_next_sequence_returns_monotonic_values(): void
     {
         // Given
         $counter = new ApcuAtomicCounter;
 
         // When
-        $a = $counter->increment('konayuki:test:k', 2);
-        $b = $counter->increment('konayuki:test:k', 2);
-        $c = $counter->increment('konayuki:test:k', 2);
+        $a = $counter->nextSequence('konayuki:test:k', 0, 2);
+        $b = $counter->nextSequence('konayuki:test:k', 0, 2);
+        $c = $counter->nextSequence('konayuki:test:k', 0, 2);
 
         // Then
-        self::assertSame([1, 2, 3], [$a, $b, $c], 'apcu_inc returns 1, 2, 3 on same key');
+        self::assertSame([0, 1, 2], [$a, $b, $c], 'first call returns initial (0), then increments');
+    }
+
+    public function test_next_sequence_honors_nonzero_initial_value(): void
+    {
+        // Given
+        $counter = new ApcuAtomicCounter;
+
+        // When
+        $a = $counter->nextSequence('konayuki:test:init', 500, 2);
+        $b = $counter->nextSequence('konayuki:test:init', 500, 2);
+
+        // Then
+        self::assertSame(500, $a, 'first call returns initial 500');
+        self::assertSame(501, $b, 'second call increments from 500');
     }
 
     public function test_different_keys_are_independent(): void
@@ -37,12 +51,12 @@ final class ApcuAtomicCounterTest extends TestCase
         $counter = new ApcuAtomicCounter;
 
         // When
-        $a = $counter->increment('konayuki:test:a', 2);
-        $b = $counter->increment('konayuki:test:b', 2);
+        $a = $counter->nextSequence('konayuki:test:a', 0, 2);
+        $b = $counter->nextSequence('konayuki:test:b', 0, 2);
 
         // Then
-        self::assertSame(1, $a, 'key a starts at 1');
-        self::assertSame(1, $b, 'key b also starts at 1 (independent)');
+        self::assertSame(0, $a, 'key a starts at initial');
+        self::assertSame(0, $b, 'key b also starts at initial (independent)');
     }
 
     public function test_wasreinitialized_true_on_fresh_apcu(): void

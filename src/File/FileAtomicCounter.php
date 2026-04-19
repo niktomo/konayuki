@@ -26,7 +26,7 @@ final class FileAtomicCounter implements AtomicCounter
         }
     }
 
-    public function increment(string $key, int $ttlSeconds): int
+    public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int
     {
         $fp = $this->openExclusive();
         try {
@@ -34,8 +34,11 @@ final class FileAtomicCounter implements AtomicCounter
             $now = time();
             $this->garbageCollect($data, $now);
 
-            $current = isset($data[$key]) ? (int) $data[$key][0] : 0;
-            $next = $current + 1;
+            if (isset($data[$key])) {
+                $next = (int) $data[$key][0] + 1;
+            } else {
+                $next = $initialValue;
+            }
             $data[$key] = [$next, $now + max(1, $ttlSeconds)];
 
             $this->writeData($fp, $data);

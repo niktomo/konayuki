@@ -16,9 +16,11 @@ use Konayuki\Hint\HostnameHashWorkerIdAllocator;
 use Konayuki\Hint\IpHashWorkerIdAllocator;
 use Konayuki\Hint\IpLastOctetWorkerIdAllocator;
 use Konayuki\IdGenerator;
-use Konayuki\JitteredTimestamp;
 use Konayuki\Layout;
 use Konayuki\RealTimestamp;
+use Konayuki\Sequence\MonotonicSequenceStrategy;
+use Konayuki\Sequence\RandomSequenceStrategy;
+use Konayuki\SequenceStrategy;
 use Konayuki\SystemClock;
 use Konayuki\TimestampStrategy;
 use Konayuki\WorkerIdAllocator;
@@ -42,13 +44,14 @@ final class KonayukiServiceProvider extends ServiceProvider
 
         $this->app->singleton(Clock::class, static fn (): Clock => new SystemClock);
         $this->app->singleton(AtomicCounter::class, static fn (): AtomicCounter => new ApcuAtomicCounter);
+        $this->app->singleton(TimestampStrategy::class, static fn (): TimestampStrategy => new RealTimestamp);
 
-        $this->app->singleton(TimestampStrategy::class, static function (Application $app): TimestampStrategy {
-            $cfg = (array) $app->make(ConfigRepository::class)->get('konayuki.timestamp');
+        $this->app->singleton(SequenceStrategy::class, static function (Application $app): SequenceStrategy {
+            $cfg = (array) $app->make(ConfigRepository::class)->get('konayuki.sequence');
 
-            return match ($cfg['mode']) {
-                'jittered' => new JitteredTimestamp((int) $cfg['jitter_ms']),
-                default => new RealTimestamp,
+            return match ($cfg['mode'] ?? 'monotonic') {
+                'random' => new RandomSequenceStrategy,
+                default => new MonotonicSequenceStrategy,
             };
         });
 
@@ -78,6 +81,7 @@ final class KonayukiServiceProvider extends ServiceProvider
                 clock: $app->make(Clock::class),
                 layout: $app->make(Layout::class),
                 timestamp: $app->make(TimestampStrategy::class),
+                sequence: $app->make(SequenceStrategy::class),
                 workerId: $allocator->acquire(),
             );
         });

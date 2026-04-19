@@ -62,16 +62,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Timestamp strategy
+    | Sequence start strategy
     |--------------------------------------------------------------------------
-    | mode: 'real' | 'jittered'
-    |  - real:     wall-clock ms (production)
-    |  - jittered: wall-clock ms ± random(0..jitter_ms) — **local dev only**.
-    |              Breaks k-sortable ordering; intended for spreading IDs across
-    |              shards when traffic is too sparse to fill ms windows.
+    | mode: 'monotonic' | 'random'
+    |  - monotonic: each ms window starts sequence at 0 (production default,
+    |               preserves k-sortable ordering, smallest IDs)
+    |  - random:    each ms window starts sequence at random_int(0, maxSequence)
+    |               → spreads IDs across DB shards / hash buckets when traffic
+    |                 is too sparse to fill ms windows naturally.
+    |               → still uniqueness-safe: (workerId, ms, sequence) tuple is unique.
+    |               → trade-off: weakens *intra-ms* monotonic ordering only;
+    |                 inter-ms ordering is preserved by the timestamp prefix.
     */
-    'timestamp' => [
-        'mode' => env('KONAYUKI_TIMESTAMP_MODE', 'real'),
-        'jitter_ms' => (int) env('KONAYUKI_JITTER_MS', 100),
+    'sequence' => [
+        'mode' => env('KONAYUKI_SEQUENCE_MODE', 'monotonic'),
     ],
 ];

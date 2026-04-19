@@ -9,6 +9,7 @@ use Konayuki\IdGenerator;
 use Konayuki\InMemory\InMemoryAtomicCounter;
 use Konayuki\Layout;
 use Konayuki\RealTimestamp;
+use Konayuki\Sequence\MonotonicSequenceStrategy;
 use PHPUnit\Framework\TestCase;
 
 final class IdGeneratorTest extends TestCase
@@ -19,7 +20,9 @@ final class IdGeneratorTest extends TestCase
         $layout = Layout::default();
         $clock = new FrozenClock($layout->epochMs + 100);
         $counter = new InMemoryAtomicCounter;
-        $generator = new IdGenerator($counter, $clock, $layout, new RealTimestamp, workerId: 1);
+        $generator = new IdGenerator(
+            $counter, $clock, $layout, new RealTimestamp, new MonotonicSequenceStrategy, workerId: 1
+        );
 
         // Act
         $a = $generator->next();
@@ -40,7 +43,9 @@ final class IdGeneratorTest extends TestCase
         $layout = Layout::default();
         $clock = new FrozenClock($layout->epochMs + 100);
         $counter = new InMemoryAtomicCounter;
-        $generator = new IdGenerator($counter, $clock, $layout, new RealTimestamp, workerId: 1);
+        $generator = new IdGenerator(
+            $counter, $clock, $layout, new RealTimestamp, new MonotonicSequenceStrategy, workerId: 1
+        );
 
         // Act
         $a = $generator->next();
@@ -63,9 +68,11 @@ final class IdGeneratorTest extends TestCase
         // that would advance the clock past our pre-populated ms key.
         $counter->wasReinitialized();
         for ($i = 0; $i < $layout->maxSequence; $i++) {
-            $counter->increment("konayuki:seq:1:{$clock->nowMs()}", 2);
+            $counter->nextSequence("konayuki:seq:1:{$clock->nowMs()}", 0, 2);
         }
-        $generator = new IdGenerator($counter, $clock, $layout, new RealTimestamp, workerId: 1);
+        $generator = new IdGenerator(
+            $counter, $clock, $layout, new RealTimestamp, new MonotonicSequenceStrategy, workerId: 1
+        );
 
         // Act — last ID in this ms
         $last = $generator->next();
@@ -89,6 +96,7 @@ final class IdGeneratorTest extends TestCase
             new FrozenClock(0),
             Layout::default(),
             new RealTimestamp,
+            new MonotonicSequenceStrategy,
             workerId: 1024,
         );
     }
@@ -99,13 +107,15 @@ final class IdGeneratorTest extends TestCase
         $layout = Layout::default();
         $clock = new FrozenClock($layout->epochMs + 100);
         $counter = new InMemoryAtomicCounter;
-        $generator = new IdGenerator($counter, $clock, $layout, new RealTimestamp, workerId: 1);
+        $generator = new IdGenerator(
+            $counter, $clock, $layout, new RealTimestamp, new MonotonicSequenceStrategy, workerId: 1
+        );
         $startMs = $clock->nowMs();
 
         // Act — wipe detection now happens inside next(), not the constructor
         $generator->next();
 
-        // Assert
+        // Assert — wait must strictly advance the relative timestamp (not just sleep N µs)
         self::assertGreaterThan($startMs, $clock->nowMs(), 'Clock advanced by safety wait after reinit on first next()');
     }
 
@@ -118,7 +128,9 @@ final class IdGeneratorTest extends TestCase
         $startMs = $clock->nowMs();
 
         // Act — wipe handling is deferred to next(); constructor must be inert wrt time
-        new IdGenerator($counter, $clock, $layout, new RealTimestamp, workerId: 1);
+        new IdGenerator(
+            $counter, $clock, $layout, new RealTimestamp, new MonotonicSequenceStrategy, workerId: 1
+        );
 
         // Assert
         self::assertSame($startMs, $clock->nowMs(), 'Clock unaffected by constructor');

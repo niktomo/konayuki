@@ -9,20 +9,31 @@ use PHPUnit\Framework\TestCase;
 
 final class InMemoryAtomicCounterTest extends TestCase
 {
-    public function test_increment_returns_monotonically_increasing_values(): void
+    public function test_first_call_returns_initial_value(): void
+    {
+        // Arrange
+        $counter = new InMemoryAtomicCounter;
+
+        // Act + Assert
+        self::assertSame(0, $counter->nextSequence('k', 0, 2), 'first call with initial=0 returns 0');
+        self::assertSame(1, $counter->nextSequence('k', 0, 2), 'second call increments to 1');
+        self::assertSame(2, $counter->nextSequence('k', 0, 2), 'third call increments to 2');
+    }
+
+    public function test_first_call_honors_nonzero_initial_value(): void
     {
         // Arrange
         $counter = new InMemoryAtomicCounter;
 
         // Act
-        $values = [
-            $counter->increment('k', 2),
-            $counter->increment('k', 2),
-            $counter->increment('k', 2),
-        ];
+        $a = $counter->nextSequence('k', 700, 2);
+        $b = $counter->nextSequence('k', 700, 2);
+        $c = $counter->nextSequence('k', 700, 2);
 
-        // Assert
-        self::assertSame([1, 2, 3], $values, 'Increment returns 1, 2, 3 on same key');
+        // Assert — initial value is consumed once; subsequent calls increment from there
+        self::assertSame(700, $a, 'first call returns initial value 700');
+        self::assertSame(701, $b, 'second call increments to 701');
+        self::assertSame(702, $c, 'third call increments to 702');
     }
 
     public function test_different_keys_are_independent(): void
@@ -31,12 +42,12 @@ final class InMemoryAtomicCounterTest extends TestCase
         $counter = new InMemoryAtomicCounter;
 
         // Act
-        $a = $counter->increment('a', 2);
-        $b = $counter->increment('b', 2);
+        $a = $counter->nextSequence('a', 0, 2);
+        $b = $counter->nextSequence('b', 0, 2);
 
         // Assert
-        self::assertSame(1, $a, 'key a starts at 1');
-        self::assertSame(1, $b, 'key b also starts at 1 (independent)');
+        self::assertSame(0, $a, 'key a starts at initial');
+        self::assertSame(0, $b, 'key b also starts at initial (independent)');
     }
 
     public function test_wasreinitialized_returns_true_on_first_call_only(): void
@@ -57,14 +68,14 @@ final class InMemoryAtomicCounterTest extends TestCase
     {
         // Arrange
         $counter = new InMemoryAtomicCounter;
-        $counter->increment('k', 2);
+        $counter->nextSequence('k', 0, 2);
         $counter->wasReinitialized();
 
         // Act
         $counter->clear();
 
         // Assert
-        self::assertSame(1, $counter->increment('k', 2), 'Counter reset to 0, next inc returns 1');
+        self::assertSame(0, $counter->nextSequence('k', 0, 2), 'counter reset, next call returns initial');
         self::assertTrue($counter->wasReinitialized(), 'Reinit flag reset');
     }
 }

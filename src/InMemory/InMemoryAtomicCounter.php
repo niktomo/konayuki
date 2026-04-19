@@ -13,10 +13,15 @@ final class InMemoryAtomicCounter implements AtomicCounter
 
     private bool $reinitConsumed = false;
 
-    public function increment(string $key, int $ttlSeconds): int
+    public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int
     {
         unset($ttlSeconds);
-        $this->store[$key] = ($this->store[$key] ?? 0) + 1;
+        if (! isset($this->store[$key])) {
+            $this->store[$key] = $initialValue;
+
+            return $initialValue;
+        }
+        $this->store[$key] = $this->store[$key] + 1;
 
         return $this->store[$key];
     }

@@ -21,6 +21,7 @@ use Konayuki\IdGenerator;
 use Konayuki\Layout;
 use Konayuki\RealTimestamp;
 use Konayuki\Redis\RedisAtomicCounter;
+use Konayuki\Sequence\MonotonicSequenceStrategy;
 use Konayuki\SystemClock;
 
 $count = (int) ($argv[1] ?? 50_000);
@@ -34,6 +35,7 @@ $run = static function (string $label, AtomicCounter $counter, int $count): arra
         clock: new SystemClock,
         layout: Layout::default(),
         timestamp: new RealTimestamp,
+        sequence: new MonotonicSequenceStrategy,
         workerId: (new FixedWorkerIdAllocator(1))->acquire(),
     );
     // Warm-up

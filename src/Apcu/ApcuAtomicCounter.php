@@ -22,8 +22,14 @@ final class ApcuAtomicCounter implements AtomicCounter
 {
     private const SENTINEL_KEY = 'konayuki:alive';
 
-    public function increment(string $key, int $ttlSeconds): int
+    public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int
     {
+        // apcu_add is atomic: only the first caller for a given key succeeds.
+        // Losers fall through to apcu_inc, which is also atomic and now sees
+        // the key populated → standard increment path.
+        if (apcu_add($key, $initialValue, $ttlSeconds)) {
+            return $initialValue;
+        }
         $value = apcu_inc($key, 1, $success, $ttlSeconds);
         if (! $success || ! is_int($value)) {
             throw new \RuntimeException("apcu_inc failed for key {$key}");

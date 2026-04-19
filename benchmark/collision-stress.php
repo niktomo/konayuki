@@ -18,6 +18,7 @@ use Konayuki\FileLock\FileLockWorkerIdAllocator;
 use Konayuki\IdGenerator;
 use Konayuki\Layout;
 use Konayuki\RealTimestamp;
+use Konayuki\Sequence\MonotonicSequenceStrategy;
 use Konayuki\SystemClock;
 
 if (! extension_loaded('pcntl') || ! extension_loaded('apcu') || ! ini_get('apc.enable_cli')) {
@@ -53,6 +54,7 @@ for ($i = 0; $i < $processes; $i++) {
             clock: new SystemClock,
             layout: Layout::default(),
             timestamp: new RealTimestamp,
+            sequence: new MonotonicSequenceStrategy,
             workerId: $allocator->acquire(),
         );
         $buf = '';
@@ -68,16 +70,45 @@ for ($i = 0; $i < $processes; $i++) {
     $pids[] = $pid;
 }
 
-$all = [];
-foreach ($pipes as $p) {
-    while (! feof($p)) {
-        $line = fgets($p);
-        if ($line === false) {
-            break;
-        }
-        $all[] = (int) trim($line);
+// Drain all pipes concurrently with stream_select to avoid SO_SNDBUF deadlock —
+// at high N×M the aggregate output (≈ 19 bytes × ids_per_process) exceeds the
+// per-pipe send buffer, and serial reads would block child writes.
+$buffers = array_fill(0, count($pipes), '');
+$open = $pipes;
+foreach ($open as $p) {
+    stream_set_blocking($p, false);
+}
+while ($open !== []) {
+    $read = $open;
+    $write = null;
+    $except = null;
+    if (stream_select($read, $write, $except, 5) === false) {
+        break;
     }
-    fclose($p);
+    foreach ($read as $p) {
+        $idx = array_search($p, $pipes, true);
+        $chunk = fread($p, 65536);
+        if ($chunk === false || $chunk === '') {
+            if (feof($p)) {
+                fclose($p);
+                unset($open[array_search($p, $open, true)]);
+            }
+
+            continue;
+        }
+        if ($idx !== false) {
+            $buffers[$idx] .= $chunk;
+        }
+    }
+}
+$all = [];
+foreach ($buffers as $buf) {
+    foreach (explode("\n", $buf) as $line) {
+        if ($line === '') {
+            continue;
+        }
+        $all[] = (int) $line;
+    }
 }
 foreach ($pids as $pid) {
     pcntl_waitpid($pid, $status);
