@@ -1,0 +1,115 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * konayuki-doctor — diagnose the host's APCu / lock environment for safe ID generation.
+ *
+ * Exit code 0 = healthy, 1 = warnings, 2 = unsafe.
+ */
+
+const COLOR_GREEN = "\033[32m";
+const COLOR_YELLOW = "\033[33m";
+const COLOR_RED = "\033[31m";
+const COLOR_RESET = "\033[0m";
+
+$exit = 0;
+$report = static function (string $level, string $message) use (&$exit): void {
+    $color = match ($level) {
+        'OK' => COLOR_GREEN,
+        'WARN' => COLOR_YELLOW,
+        'FAIL' => COLOR_RED,
+        default => COLOR_RESET,
+    };
+    echo "{$color}[{$level}]{$message}" . COLOR_RESET . PHP_EOL;
+    if ($level === 'WARN' && $exit < 1) {
+        $exit = 1;
+    }
+    if ($level === 'FAIL') {
+        $exit = 2;
+    }
+};
+
+echo PHP_EOL . 'konayuki-doctor — environment safety check' . PHP_EOL;
+echo str_repeat('=', 50) . PHP_EOL . PHP_EOL;
+
+// 1. PHP version
+$phpOk = PHP_VERSION_ID >= 80200;
+$report($phpOk ? 'OK' : 'FAIL', " PHP version: " . PHP_VERSION . ($phpOk ? '' : ' (require >= 8.2)'));
+
+// 2. APCu extension
+$apcuLoaded = extension_loaded('apcu');
+$report($apcuLoaded ? 'OK' : 'FAIL', ' APCu extension: ' . ($apcuLoaded ? 'loaded' : 'not loaded'));
+
+if ($apcuLoaded) {
+    // 3. APCu CLI mode
+    $cliEnabled = (bool) ini_get('apc.enable_cli');
+    $report($cliEnabled ? 'OK' : 'WARN', ' apc.enable_cli: ' . ($cliEnabled ? 'on' : 'off (CLI ID generation will not work)'));
+
+    // 4. APCu locking type
+    $info = '';
+    ob_start();
+    phpinfo(INFO_MODULES);
+    $info = ob_get_clean() ?: '';
+    if (preg_match('/Locking type\s*=>\s*([^\n<]+)/i', $info, $m)) {
+        $lock = trim($m[1]);
+        $report('OK', " APCu locking type: {$lock}");
+    } else {
+        $report('WARN', ' APCu locking type: unknown (cannot detect via phpinfo)');
+    }
+
+    // 5. APCu functional probe
+    $key = 'konayuki:doctor:probe';
+    apcu_delete($key);
+    $a = apcu_inc($key, 1, $sa);
+    $b = apcu_inc($key, 1, $sb);
+    apcu_delete($key);
+    if ($sa && $sb && $a === 1 && $b === 2) {
+        $report('OK', ' APCu inc functional: 1, 2 returned correctly');
+    } else {
+        $report('FAIL', ' APCu inc misbehaves');
+    }
+
+    // 6. APCu memory pressure
+    $sma = apcu_sma_info(true);
+    if (is_array($sma) && isset($sma['avail_mem'], $sma['seg_size'], $sma['num_seg'])) {
+        $totalSize = (int) $sma['seg_size'] * (int) $sma['num_seg'];
+        $availMem = (int) $sma['avail_mem'];
+        $availPct = $totalSize > 0 ? ($availMem / $totalSize) * 100 : 0;
+        $totalMb = number_format($totalSize / 1024 / 1024, 1);
+        $availMb = number_format($availMem / 1024 / 1024, 1);
+        $line = sprintf(' APCu memory: %sMB free / %sMB total (%.1f%%)', $availMb, $totalMb, $availPct);
+        if ($availPct < 1.0) {
+            $report('FAIL', $line . ' — danger of apcu_inc failure');
+        } elseif ($availPct < 10.0) {
+            $report('WARN', $line . ' — consider raising apc.shm_size');
+        } else {
+            $report('OK', $line);
+        }
+    } else {
+        $report('WARN', ' APCu memory: apcu_sma_info() returned unexpected shape');
+    }
+}
+
+// 6. flock support
+$tmp = tempnam(sys_get_temp_dir(), 'konayuki-doctor-');
+$fp = fopen($tmp, 'cb');
+$flockOk = $fp !== false && flock($fp, LOCK_EX | LOCK_NB);
+if ($fp !== false) {
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+@unlink($tmp);
+$report($flockOk ? 'OK' : 'FAIL', ' flock(LOCK_EX|LOCK_NB): ' . ($flockOk ? 'works' : 'failed'));
+
+// 7. Suggested worker_id strategy
+echo PHP_EOL;
+echo 'Recommendation:' . PHP_EOL;
+if ($exit === 0) {
+    echo '  Use FileLockWorkerIdAllocator + ApcuAtomicCounter (default).' . PHP_EOL;
+} else {
+    echo '  Resolve the above warnings before relying on Konayuki for ID generation.' . PHP_EOL;
+}
+
+exit($exit);

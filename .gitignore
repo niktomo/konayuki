@@ -1,0 +1,18 @@
+/vendor/
+/composer.lock
+/.phpunit.cache
+/.phpunit.result.cache
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+/coverage/

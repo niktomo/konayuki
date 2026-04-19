@@ -1,0 +1,53 @@
+{
+    "name": "niktomo/konayuki",
+    "description": "High-throughput 63-bit Snowflake ID generator backed by APCu shared memory",
+    "keywords": ["snowflake", "id", "apcu", "distributed-id", "laravel"],
+    "homepage": "https://github.com/niktomo/konayuki",
+    "authors": [
+        {
+            "name": "niktomo",
+            "role": "Developer"
+        }
+    ],
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "ext-apcu": "*",
+        "illuminate/support": "^12.0|^13.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.0",
+        "phpstan/phpstan": "^2.0",
+        "laravel/pint": "^1.0",
+        "orchestra/testbench": "^10.0",
+        "larastan/larastan": "^3.9"
+    },
+    "autoload": {
+        "psr-4": {
+            "Konayuki\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Konayuki\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Konayuki\\Laravel\\KonayukiServiceProvider"
+            ],
+            "aliases": {
+                "Konayuki": "Konayuki\\Laravel\\Facades\\Konayuki"
+            }
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "stan": "vendor/bin/phpstan analyse --memory-limit=512M",
+        "pint": "vendor/bin/pint"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
