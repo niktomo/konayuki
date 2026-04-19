@@ -56,9 +56,12 @@ final class IdGeneratorTest extends TestCase
     public function test_blocks_until_next_ms_when_sequence_exhausted(): void
     {
         // Arrange — pre-populate counter to one below max
-        $layout = new Layout(epochMs: 0, timestampBits: 41, workerBits: 10, sequenceBits: 4);
+        $layout = new Layout(epochMs: 0, timestampBits: 41, workerBits: 18, sequenceBits: 4);
         $clock = new FrozenClock(100);
         $counter = new InMemoryAtomicCounter;
+        // Consume the fresh-instance reinit signal so next() doesn't trigger a 1ms safety wait
+        // that would advance the clock past our pre-populated ms key.
+        $counter->wasReinitialized();
         for ($i = 0; $i < $layout->maxSequence; $i++) {
             $counter->increment("konayuki:seq:1:{$clock->nowMs()}", 2);
         }

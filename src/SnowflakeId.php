@@ -61,17 +61,20 @@ final readonly class SnowflakeId implements Stringable
     }
 
     /**
-     * Use the low-order bits (sequence + worker) for shard routing.
-     * Avoid using `value MOD N` directly — it would route by timestamp under low traffic.
+     * Hash-based shard routing. Avoids two failure modes:
+     *  - `value MOD N` clusters by timestamp under low traffic.
+     *  - Direct `low_bits MOD N` collapses when N is a power-of-2 aligned with
+     *    a bit-field boundary (e.g. shardCount=16 vs workerShift=12 → all
+     *    workers route to the same shard).
+     * crc32 provides cheap avalanche so every bit of the ID influences the result.
      */
     public function shardKey(int $shardCount): int
     {
         if ($shardCount < 1) {
             throw new \InvalidArgumentException('shardCount must be >= 1.');
         }
-        $low = $this->value & ((1 << $this->layout->timestampShift) - 1);
 
-        return $low % $shardCount;
+        return crc32((string) $this->value) % $shardCount;
     }
 
     public function __toString(): string

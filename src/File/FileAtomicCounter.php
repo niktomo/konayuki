@@ -85,6 +85,9 @@ final class FileAtomicCounter implements AtomicCounter
     }
 
     /**
+     * Reads and validates each entry — disk content is untrusted JSON, so
+     * malformed rows are silently dropped (consistent with the GC contract).
+     *
      * @param  resource  $fp
      * @return array<string, array{0:int,1:int}>
      */
@@ -96,8 +99,21 @@ final class FileAtomicCounter implements AtomicCounter
             return [];
         }
         $decoded = json_decode($raw, true);
+        if (! is_array($decoded)) {
+            return [];
+        }
+        $result = [];
+        foreach ($decoded as $k => $entry) {
+            if (! is_string($k) || ! is_array($entry)) {
+                continue;
+            }
+            if (! isset($entry[0], $entry[1]) || ! is_int($entry[0]) || ! is_int($entry[1])) {
+                continue;
+            }
+            $result[$k] = [$entry[0], $entry[1]];
+        }
 
-        return is_array($decoded) ? $decoded : [];
+        return $result;
     }
 
     /**
@@ -118,7 +134,7 @@ final class FileAtomicCounter implements AtomicCounter
     private function garbageCollect(array &$data, int $now): void
     {
         foreach ($data as $k => $entry) {
-            if (! is_array($entry) || ! isset($entry[1]) || $entry[1] < $now) {
+            if ($entry[1] < $now) {
                 unset($data[$k]);
             }
         }
