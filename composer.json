@@ -12,7 +12,7 @@
     "type": "library",
     "license": "MIT",
     "require": {
-        "php": "^8.2",
+        "php": "^8.3",
         "ext-apcu": "*",
         "illuminate/support": "^12.0|^13.0"
     },

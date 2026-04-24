@@ -1,7 +1,7 @@
 # Konayuki
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![PHP](https://img.shields.io/badge/PHP-%5E8.2-777bb4)](composer.json)
+[![PHP](https://img.shields.io/badge/PHP-%5E8.3-777bb4)](composer.json)
 [![Laravel](https://img.shields.io/badge/Laravel-12%20%7C%2013-ff2d20)](composer.json)
 
 [English](README.md) | **日本語**
