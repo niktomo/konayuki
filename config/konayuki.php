@@ -54,7 +54,10 @@ return [
         'mode' => env('KONAYUKI_WORKER_ID_MODE', 'file-lock'),
         'fixed_value' => env('KONAYUKI_WORKER_ID'),
         'lock_dir' => env('KONAYUKI_LOCK_DIR'),
-        'max_workers' => (int) env('KONAYUKI_MAX_WORKERS', 1024),
+        // Upper bound for worker_id slot allocation.
+        // Defaults to 2^worker_bits (i.e. all slots). Set lower to cap concurrency.
+        // Must be <= 2^worker_bits; the ServiceProvider clamps it automatically.
+        'max_workers' => env('KONAYUKI_MAX_WORKERS') !== null ? (int) env('KONAYUKI_MAX_WORKERS') : null,
         // Optional override for ip-* and hostname-hash modes (testing / fixed-IP setups)
         'ip_override' => env('KONAYUKI_IP_OVERRIDE'),
         'hostname_override' => env('KONAYUKI_HOSTNAME_OVERRIDE'),

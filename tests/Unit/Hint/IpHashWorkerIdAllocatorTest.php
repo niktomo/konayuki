@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Konayuki\Tests\Unit\Hint;
 
 use Konayuki\Hint\IpHashWorkerIdAllocator;
+use Konayuki\Layout;
 use PHPUnit\Framework\TestCase;
 
 final class IpHashWorkerIdAllocatorTest extends TestCase
@@ -43,6 +44,33 @@ final class IpHashWorkerIdAllocatorTest extends TestCase
         // Assert
         self::assertGreaterThanOrEqual(0, $id, 'IPv6 hash falls in valid range');
         self::assertLessThan(1024, $id, 'IPv6 hash falls in valid range');
+    }
+
+    public function test_from_layout_constrains_to_layout_max_workers(): void
+    {
+        // Arrange — layout with non-default workerBits
+        $layout = new Layout(epochMs: 0, timestampBits: 41, workerBits: 8, sequenceBits: 14);
+        $allocator = IpHashWorkerIdAllocator::fromLayout($layout, ipOverride: '10.0.0.5');
+
+        // Act
+        $id = $allocator->acquire();
+
+        // Assert
+        self::assertGreaterThanOrEqual(0, $id, 'worker_id must be >= 0');
+        self::assertLessThanOrEqual($layout->maxWorkerId, $id, 'worker_id must not exceed layout max');
+    }
+
+    public function test_from_layout_matches_manual_construction(): void
+    {
+        // Arrange
+        $layout = Layout::default();
+        $ip = '192.168.1.99';
+
+        $via_factory = IpHashWorkerIdAllocator::fromLayout($layout, ipOverride: $ip);
+        $manually = new IpHashWorkerIdAllocator(ipOverride: $ip, maxWorkers: $layout->maxWorkerId + 1);
+
+        // Assert — both must yield the same worker_id
+        self::assertSame($via_factory->acquire(), $manually->acquire(), 'fromLayout matches manual construction');
     }
 
     public function test_typically_distributes_adjacent_subnet_ips(): void

@@ -57,7 +57,12 @@ final class KonayukiServiceProvider extends ServiceProvider
 
         $this->app->singleton(WorkerIdAllocator::class, static function (Application $app): WorkerIdAllocator {
             $cfg = (array) $app->make(ConfigRepository::class)->get('konayuki.worker_id');
-            $maxWorkers = (int) $cfg['max_workers'];
+            $layout = $app->make(Layout::class);
+            // Derive from layout when not explicitly configured; clamp when it is.
+            // This ensures changing worker_bits in the layout automatically propagates.
+            $maxWorkers = $cfg['max_workers'] !== null
+                ? min((int) $cfg['max_workers'], $layout->maxWorkerId + 1)
+                : $layout->maxWorkerId + 1;
             $ipOverride = is_string($cfg['ip_override'] ?? null) ? $cfg['ip_override'] : null;
             $hostnameOverride = is_string($cfg['hostname_override'] ?? null) ? $cfg['hostname_override'] : null;
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Konayuki\Hint;
 
+use Konayuki\Layout;
 use Konayuki\WorkerIdAllocator;
 
 /**
@@ -21,6 +22,11 @@ final class IpHashWorkerIdAllocator implements WorkerIdAllocator
         private readonly ?string $ipOverride = null,
         private readonly int $maxWorkers = 1024,
     ) {}
+
+    public static function fromLayout(Layout $layout, ?string $ipOverride = null): self
+    {
+        return new self($ipOverride, $layout->maxWorkerId + 1);
+    }
 
     public function acquire(): int
     {

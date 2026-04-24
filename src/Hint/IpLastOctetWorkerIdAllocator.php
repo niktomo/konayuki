@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Konayuki\Hint;
 
+use Konayuki\Layout;
 use Konayuki\WorkerIdAllocator;
 
 /**
@@ -30,6 +31,17 @@ final class IpLastOctetWorkerIdAllocator implements WorkerIdAllocator
                 "maxWorkers must be >= 256 to fit a full IPv4 last octet, got {$maxWorkers}"
             );
         }
+    }
+
+    public static function fromLayout(Layout $layout, ?string $ipOverride = null): self
+    {
+        if ($layout->maxWorkerId < 255) {
+            throw new \InvalidArgumentException(
+                "Layout workerBits must be >= 8 for IpLastOctetWorkerIdAllocator (maxWorkerId={$layout->maxWorkerId} < 255)"
+            );
+        }
+
+        return new self($ipOverride, $layout->maxWorkerId + 1);
     }
 
     public function acquire(): int

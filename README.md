@@ -62,8 +62,8 @@ Laravel auto-discovers the service provider. Out of the box, the defaults work f
 use Konayuki\Laravel\Facades\Konayuki;
 
 $id = Konayuki::next();        // SnowflakeId
-$id->toInt();                  // 7,123,456,789,012,345
-$id->timestamp();              // 1,712,345,678,000 (ms)
+$id->value;                    // 7_123_456_789_012_345  (PHP int, 63-bit)
+$id->timestamp();              // 1_712_345_678_000 (ms)
 $id->workerId();               // auto-allocated via flock
 $id->sequence();               // 0..4095 within ms
 ```
@@ -448,6 +448,7 @@ docker compose run --rm bench
 | APCu wipe detection | ✅ sentinel-based | ❌ | ❌ |
 | Cross-process collision tested | ✅ in CI | ❌ | ❌ |
 | Custom epoch | ✅ | ✅ | ⚠️ Unix only |
+| Worker ID layout-aware factories | ✅ `fromLayout()` | ❌ | ❌ |
 
 ---
 
@@ -465,12 +466,46 @@ There is **no runtime error**. The collision rate depends on your write traffic 
 
 **Fix**: set `KONAYUKI_WORKER_ID_MODE` to `fixed` / `hostname-hash` / `ip-hash` / `ip-last-octet` **before going to production**, and verify with `vendor/bin/konayuki-doctor` on each host.
 
-### Are 63-bit IDs safe to send to JavaScript?
+### Are 63-bit IDs safe to send to clients?
 
-**Yes, but serialize as string.** JS `Number.MAX_SAFE_INTEGER` is `2^53 - 1`. Snowflake IDs reach `2^62`. Always send as JSON string:
+Keep `SnowflakeId` as a PHP `int` inside your application. Convert to string only at the **API boundary**.
+
+**JavaScript / TypeScript** — `Number.MAX_SAFE_INTEGER` is `2^53 - 1`; Snowflake IDs reach `2^62`. Always send as a JSON string, parse with `BigInt` on the client:
 
 ```php
-'id' => (string) $id->toInt(),
+// PHP: serialize as string
+'id' => (string) $id->value,
+```
+
+```ts
+// TypeScript: parse as BigInt
+const id = BigInt(response.id);
+```
+
+**C# / Unity** — `long` is 64-bit signed, fully covers the 63-bit range:
+
+```php
+// PHP: serialize as string
+'id' => (string) $id->value,
+```
+
+```csharp
+// C#: parse to long
+long id = long.Parse(response["id"]);
+```
+
+**Obfuscation with [Kasumi](https://github.com/niktomo/kasumi)** — if you want to hide sequential nature and internal structure from public API consumers:
+
+```php
+use Kasumi\Scrambler;
+
+$scrambler = new Scrambler(salt: (int) env('SCRAMBLE_SALT'));
+
+// encode
+'id' => (string) $scrambler->scramble($id->value),   // "0yhgff51j5fube" (14-char base36)
+
+// decode (involutory — same call)
+$originalValue = $scrambler->scramble($encoded)->toInt();
 ```
 
 ### Why APCu instead of Redis by default?
