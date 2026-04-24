@@ -20,7 +20,14 @@ use Konayuki\AtomicCounter;
  */
 final class ApcuAtomicCounter implements AtomicCounter
 {
-    private const SENTINEL_KEY = 'konayuki:alive';
+    public const DEFAULT_KEY_PREFIX = 'konayuki:seq';
+
+    private readonly string $sentinelKey;
+
+    public function __construct(string $keyPrefix = self::DEFAULT_KEY_PREFIX)
+    {
+        $this->sentinelKey = sprintf('%s:_sentinel', $keyPrefix);
+    }
 
     public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int
     {
@@ -43,6 +50,6 @@ final class ApcuAtomicCounter implements AtomicCounter
         // apcu_add returns true only if the key was created (i.e. APCu was empty for this key).
         // Called on every next() so that a wipe occurring mid-instance-lifetime is also detected.
         // Race-safe: only one process wins the add; others see false → not reinitialized from their POV.
-        return apcu_add(self::SENTINEL_KEY, 1, 0);
+        return apcu_add($this->sentinelKey, 1, 0);
     }
 }

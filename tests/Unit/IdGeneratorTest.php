@@ -68,7 +68,7 @@ final class IdGeneratorTest extends TestCase
         // that would advance the clock past our pre-populated ms key.
         $counter->wasReinitialized();
         for ($i = 0; $i < $layout->maxSequence; $i++) {
-            $counter->nextSequence("konayuki:seq:1:{$clock->nowMs()}", 0, 2);
+            $counter->nextSequence(sprintf('%s:1:%d', IdGenerator::DEFAULT_KEY_PREFIX, $clock->nowMs()), 0, 2);
         }
         $generator = new IdGenerator(
             $counter, $clock, $layout, new RealTimestamp, new MonotonicSequenceStrategy, workerId: 1
