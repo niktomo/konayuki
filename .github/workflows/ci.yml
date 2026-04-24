@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'phase-*/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        php: ['8.2', '8.3', '8.4', '8.5']
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 1s
+          --health-timeout 1s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: apcu, pcntl, redis, sockets, zip
+          ini-values: apc.enabled=1, apc.enable_cli=1, apc.shm_size=256M, memory_limit=512M
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php${{ matrix.php }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: |
+            ${{ runner.os }}-php${{ matrix.php }}-composer-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: PHPUnit
+        env:
+          KONAYUKI_REDIS_HOST: 127.0.0.1
+          KONAYUKI_REDIS_PORT: 6379
+        run: vendor/bin/phpunit --no-coverage
+
+  static-analysis:
+    name: PHPStan + Pint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: apcu, pcntl, redis, sockets
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: PHPStan (level 8, no baseline)
+        run: vendor/bin/phpstan analyse --memory-limit=512M --no-progress
+
+      - name: Pint (style check)
+        run: vendor/bin/pint --test
+
+  benchmark-smoke:
+    name: Benchmark smoke (collision + throughput)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: apcu, pcntl
+          ini-values: apc.enabled=1, apc.enable_cli=1, apc.shm_size=256M, memory_limit=1G
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Collision stress (8 procs × 10K)
+        run: php benchmark/collision-stress.php 8 10000
+
+      - name: Throughput (100K — short smoke)
+        run: php benchmark/throughput.php 100000
