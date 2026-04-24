@@ -3,6 +3,9 @@
 /.phpunit.cache
 /.phpunit.result.cache
 .claude/
+/CLAUDE.md
+/docs/
+/rules/
 
 # IDE
 .idea/
