@@ -43,7 +43,11 @@ final class KonayukiServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(Clock::class, static fn (): Clock => new SystemClock);
-        $this->app->singleton(AtomicCounter::class, static fn (): AtomicCounter => new ApcuAtomicCounter);
+        $this->app->singleton(AtomicCounter::class, static function (Application $app): AtomicCounter {
+            $prefix = (string) $app->make(ConfigRepository::class)->get('konayuki.key_prefix', IdGenerator::DEFAULT_KEY_PREFIX);
+
+            return new ApcuAtomicCounter($prefix);
+        });
         $this->app->singleton(TimestampStrategy::class, static fn (): TimestampStrategy => new RealTimestamp);
 
         $this->app->singleton(SequenceStrategy::class, static function (Application $app): SequenceStrategy {
@@ -75,6 +79,7 @@ final class KonayukiServiceProvider extends ServiceProvider
 
         $this->app->singleton(IdGenerator::class, static function (Application $app): IdGenerator {
             $allocator = $app->make(WorkerIdAllocator::class);
+            $prefix = (string) $app->make(ConfigRepository::class)->get('konayuki.key_prefix', IdGenerator::DEFAULT_KEY_PREFIX);
 
             return new IdGenerator(
                 counter: $app->make(AtomicCounter::class),
@@ -83,6 +88,7 @@ final class KonayukiServiceProvider extends ServiceProvider
                 timestamp: $app->make(TimestampStrategy::class),
                 sequence: $app->make(SequenceStrategy::class),
                 workerId: $allocator->acquire(),
+                keyPrefix: $prefix,
             );
         });
     }

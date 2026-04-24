@@ -77,4 +77,15 @@ return [
     'sequence' => [
         'mode' => env('KONAYUKI_SEQUENCE_MODE', 'monotonic'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Key prefix
+    |--------------------------------------------------------------------------
+    | Prefix for the per-(worker, ms) atomic counter key, and the wipe-detection
+    | sentinel key. Override to namespace counters across multi-tenant deployments
+    | sharing one APCu / Redis instance, or to migrate without colliding with old
+    | keys. Final keys are: "{prefix}:{workerId}:{ms}" and "{prefix}:_sentinel".
+    */
+    'key_prefix' => env('KONAYUKI_KEY_PREFIX', 'konayuki:seq'),
 ];

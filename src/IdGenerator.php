@@ -8,6 +8,8 @@ final class IdGenerator
 {
     private const MAX_ATTEMPTS = 10_000;
 
+    public const DEFAULT_KEY_PREFIX = 'konayuki:seq';
+
     public function __construct(
         private readonly AtomicCounter $counter,
         private readonly Clock $clock,
@@ -15,6 +17,7 @@ final class IdGenerator
         private readonly TimestampStrategy $timestamp,
         private readonly SequenceStrategy $sequence,
         private readonly int $workerId,
+        private readonly string $keyPrefix = self::DEFAULT_KEY_PREFIX,
     ) {
         if ($workerId < 0 || $workerId > $layout->maxWorkerId) {
             throw new \InvalidArgumentException(
@@ -39,7 +42,7 @@ final class IdGenerator
             if ($relativeTs < 0 || $relativeTs > $this->layout->maxTimestamp) {
                 throw new \RuntimeException("Timestamp out of layout range: {$relativeTs}");
             }
-            $key = "konayuki:seq:{$this->workerId}:{$relativeTs}";
+            $key = sprintf('%s:%d:%d', $this->keyPrefix, $this->workerId, $relativeTs);
             $initialValue = $this->sequence->initialValue($this->layout->maxSequence);
             $sequence = $this->counter->nextSequence($key, $initialValue, 2);
 
