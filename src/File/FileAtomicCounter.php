@@ -16,7 +16,7 @@ use Konayuki\AtomicCounter;
  */
 final class FileAtomicCounter implements AtomicCounter
 {
-    private const SENTINEL_KEY = '__konayuki_alive__';
+    private readonly string $sentinelKey;
 
     public function __construct(public readonly string $stateFile)
     {
@@ -24,6 +24,7 @@ final class FileAtomicCounter implements AtomicCounter
         if (! is_dir($dir) && ! @mkdir($dir, 0775, true) && ! is_dir($dir)) {
             throw new \RuntimeException("Cannot create state directory: {$dir}");
         }
+        $this->sentinelKey = sprintf('__konayuki_alive__%d__', getmypid());
     }
 
     public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int
@@ -57,10 +58,10 @@ final class FileAtomicCounter implements AtomicCounter
             $data = $this->readData($fp);
             $this->garbageCollect($data, time());
 
-            if (isset($data[self::SENTINEL_KEY])) {
+            if (isset($data[$this->sentinelKey])) {
                 return false;
             }
-            $data[self::SENTINEL_KEY] = [1, time() + 86400 * 365];
+            $data[$this->sentinelKey] = [1, time() + 86400 * 365];
             $this->writeData($fp, $data);
 
             return true;

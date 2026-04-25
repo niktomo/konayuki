@@ -77,11 +77,26 @@ final class ApcuAtomicCounterTest extends TestCase
         $first = new ApcuAtomicCounter;
         $first->wasReinitialized();
 
-        // When — second instance checks
+        // When — second instance in same process checks (same PID → same sentinel key)
         $second = new ApcuAtomicCounter;
         $reinit = $second->wasReinitialized();
 
         // Then
-        self::assertFalse($reinit, 'second instance sees existing sentinel');
+        self::assertFalse($reinit, 'second instance in same process sees existing sentinel');
+    }
+
+    public function test_wasreinitialized_detects_wipe_on_running_instance(): void
+    {
+        // Given — establish sentinel for this process
+        $counter = new ApcuAtomicCounter;
+        self::assertTrue($counter->wasReinitialized(), 'fresh APCu: wipe detected');
+        self::assertFalse($counter->wasReinitialized(), 'sentinel established: no reinit');
+
+        // When — simulate APCu wipe mid-instance-lifetime
+        apcu_clear_cache();
+
+        // Then — per-PID sentinel is gone; long-lived process must detect it
+        self::assertTrue($counter->wasReinitialized(), 'post-wipe: reinit detected for running instance');
+        self::assertFalse($counter->wasReinitialized(), 'sentinel re-established: subsequent calls return false');
     }
 }

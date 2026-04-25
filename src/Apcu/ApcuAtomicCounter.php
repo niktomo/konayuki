@@ -17,6 +17,12 @@ use Konayuki\AtomicCounter;
  * - The only collision window is "wipe + same-ms request", which IdGenerator
  *   guards against by detecting the wipe via {@see wasReinitialized()} and
  *   waiting one ms before issuing.
+ *
+ * Per-PID sentinel:
+ * - The sentinel key embeds getmypid() so that EVERY process independently
+ *   detects a wipe. A shared sentinel would let only the first process to call
+ *   apcu_add "consume" the detection signal; all others would see false and
+ *   skip the safety wait, risking same-ms collisions.
  */
 final class ApcuAtomicCounter implements AtomicCounter
 {
@@ -26,7 +32,7 @@ final class ApcuAtomicCounter implements AtomicCounter
 
     public function __construct(string $keyPrefix = self::DEFAULT_KEY_PREFIX)
     {
-        $this->sentinelKey = sprintf('%s:_sentinel', $keyPrefix);
+        $this->sentinelKey = sprintf('%s:_sentinel:%d', $keyPrefix, getmypid());
     }
 
     public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int
@@ -47,9 +53,8 @@ final class ApcuAtomicCounter implements AtomicCounter
 
     public function wasReinitialized(): bool
     {
-        // apcu_add returns true only if the key was created (i.e. APCu was empty for this key).
-        // Called on every next() so that a wipe occurring mid-instance-lifetime is also detected.
-        // Race-safe: only one process wins the add; others see false → not reinitialized from their POV.
+        // apcu_add returns true only if the key was absent (APCu wipe or first run for this PID).
+        // Per-PID key means every process independently detects a wipe — no shared sentinel race.
         return apcu_add($this->sentinelKey, 1, 0);
     }
 }

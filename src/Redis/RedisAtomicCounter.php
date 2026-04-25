@@ -21,7 +21,9 @@ use Konayuki\AtomicCounter;
  */
 final class RedisAtomicCounter implements AtomicCounter
 {
-    private const SENTINEL_KEY = '__konayuki_alive__';
+    private const SENTINEL_BASE = '__konayuki_alive__';
+
+    private readonly string $sentinelKey;
 
     private const NEXT_SEQUENCE_SCRIPT = <<<'LUA'
         local key = KEYS[1]
@@ -46,6 +48,8 @@ final class RedisAtomicCounter implements AtomicCounter
                 'Redis client must expose eval() and set() methods (phpredis or Predis compatible).'
             );
         }
+        // Sentinel is per host+PID so every process independently detects a Redis flush.
+        $this->sentinelKey = sprintf('%s%s:%s:%d', $keyPrefix, self::SENTINEL_BASE, gethostname(), getmypid());
     }
 
     public function nextSequence(string $key, int $initialValue, int $ttlSeconds): int
@@ -61,8 +65,7 @@ final class RedisAtomicCounter implements AtomicCounter
 
     public function wasReinitialized(): bool
     {
-        $key = $this->keyPrefix.self::SENTINEL_KEY;
-        $result = $this->callSet($key, '1', ['NX']);
+        $result = $this->callSet($this->sentinelKey, '1', ['NX']);
 
         return $result === true || $result === 'OK';
     }
